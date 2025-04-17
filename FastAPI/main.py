@@ -3,6 +3,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from PIL import Image, ImageEnhance
 from io import BytesIO
+from matplotlib import pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import numpy as np
 import math
 import requests
 
@@ -10,13 +14,75 @@ app = FastAPI()
 
 
 class StaticMapParams(BaseModel):
-    coordinates: str
+    bounds: str
     map_type: str = "roadmap"
     contrast: int = 1
     greyscale: bool = False
     draw_rectangle: bool = False
     rectangle_rgba: str = "ff0000ff"
     rectangle_weight: int = 1
+
+
+def round_half_up(n: float, decimals: int = 0) -> float:
+    multiplier = 10 ** decimals
+    return math.floor(n * multiplier + 0.5) / multiplier
+
+
+def make_elevation_matrix(min_lat, min_lon, max_lat, max_lon, lat_size, lon_size, progress_callback=None):
+    # Progress callback format: def progress_callback(current, max)
+    url = "https://maps.googleapis.com/maps/api/elevation/json"
+    api_key = "AIzaSyAN4RaYNeTo-BXcPBKG_gsjNgSW4FHmYGs"
+    elevation_matrix = np.zeros((lat_size, lon_size), dtype=float)
+    lat_step = (max_lat - min_lat) / (lat_size - 1)
+    lon_step = (max_lon - min_lon) / (lon_size - 1)
+    batch_size = 512
+    start_index = 0
+    i = start_index
+    matrix_area = lat_size * lon_size
+    min_elevation = None
+    max_elevation = None
+    if progress_callback != None:
+        progress_callback(0, matrix_area)
+    while True:
+        end_index = start_index + (batch_size - 1)
+        end_index = end_index if end_index < matrix_area else matrix_area - 1
+        batch_locations_list = []
+        i = start_index
+        while i <= end_index:
+            row = math.floor(i / lon_size)
+            col = i % lon_size
+            new_lat = round_half_up(max_lat - (lat_step * row), 6)
+            new_lon = round_half_up(min_lon + (lon_step * col), 6)
+            batch_locations_list.append(f"{new_lat},{new_lon}")
+            i += 1
+        batch_locations_param = "|".join(batch_locations_list)
+        batch_params = {
+            'locations': batch_locations_param,
+            'key': api_key
+        }
+        batch_data = requests.get(url, params=batch_params).json()
+        batch_elevations = []
+        if batch_data['status'] != 'OK':
+            print(f"Error: {batch_data['status']}")
+            break
+        batch_elevations = [result['elevation']
+                            for result in batch_data['results']]
+        min_batch_elevation = min(batch_elevations)
+        max_batch_elevation = max(batch_elevations)
+        min_elevation = min_batch_elevation if min_elevation == None or min_batch_elevation < min_elevation else min_elevation
+        max_elevation = max_batch_elevation if max_elevation == None or max_batch_elevation > max_elevation else max_elevation
+        i = start_index
+        while i <= end_index:
+            row = math.floor(i / lon_size)
+            col = i % lon_size
+            elevation_matrix[row][col] = batch_elevations[i - start_index]
+            i += 1
+        if progress_callback != None:
+            progress_callback(end_index + 1, matrix_area)
+        start_index = end_index + 1
+        if start_index >= matrix_area:
+            break
+    return (np.array(elevation_matrix), min_elevation, max_elevation)
 
 
 def generate_static_map(minLat, minLon, maxLat, maxLon,
@@ -111,12 +177,38 @@ def generate_static_map(minLat, minLon, maxLat, maxLon,
     return outputIO
 
 
+def generate_elevation_contour(minLat, minLon, maxLat, maxLon, vertical_size, horizontal_size):
+    def print_progress(current, max):
+        progress = current / max
+        print(f"Progress: {current}/{max} - {progress:.2%}")
+    elevation_matrix, min_elev, max_elev = make_elevation_matrix(
+        minLat, minLon, maxLat, maxLon, vertical_size, horizontal_size, progress_callback=print_progress)
+    elev_fig, elev_ax = plt.subplots(figsize=(horizontal_size, vertical_size))
+    elev_contour = elev_ax.contourf(
+        elevation_matrix, origin='upper', cmap='terrain')
+    elev_ax.set_xticks([])
+    elev_ax.set_yticks([])
+    # elev_image_buffer = BytesIO()
+    # plt.savefig(elev_image_buffer, format="png", dpi=300, bbox_inches="tight")
+    # plt.savefig("Plots/elevation_contour_clear.png", dpi=300, bbox_inches="tight")
+    elev_cax = make_axes_locatable(elev_ax).append_axes(
+        "right", size="5%", pad=0.1)
+    elev_cbar = plt.colorbar(elev_contour, cax=elev_cax)
+    elev_cbar.set_label("Elevation (meters)")
+    elev_ax.set_title("Elevation contour")
+    # plt.savefig("Plots/elevation_contour.png", dpi=300, bbox_inches="tight")
+    elev_contour_io = BytesIO()
+    plt.savefig(elev_contour_io, format="png", dpi=300, bbox_inches="tight")
+    plt.close(elev_fig)
+    return elev_contour_io
+
+
 @app.get("/static_map")
 def new_map(params: StaticMapParams = Depends()):
-    coordinates = [float(x) for x in params.coordinates.split(",")]
+    coordinates = [float(x) for x in params.bounds.split(",")]
     if len(coordinates) != 4:
         raise HTTPException(
-            status_code=400, detail="Coordinates parameter requires four [float] values: minLat, minLon, maxLat, maxLon")
+            status_code=400, detail="Bounds parameter requires four [float] values: minLat, minLon, maxLat, maxLon")
     minLat = coordinates[0]
     minLon = coordinates[1]
     maxLat = coordinates[2]
@@ -129,3 +221,40 @@ def new_map(params: StaticMapParams = Depends()):
                                 params.rectangle_rgba,
                                 params.rectangle_weight)
     return StreamingResponse(mapIO, media_type="image/png")
+
+
+@app.get("/elevation_contour")
+def new_elev_contour_map(bounds: str, vertical_size: int, horizontal_size: int):
+    coordinates = [float(x) for x in bounds.split(",")]
+    if len(coordinates) != 4:
+        raise HTTPException(
+            status_code=400, detail="Bounds parameter requires four [float] values: minLat, minLon, maxLat, maxLon")
+    minLat = coordinates[0]
+    minLon = coordinates[1]
+    maxLat = coordinates[2]
+    maxLon = coordinates[3]
+    # contourIO = generate_elevation_contour(minLat, minLon, maxLat, maxLon, vertical_size, horizontal_size)
+
+    def print_progress(current, max):
+        progress = current / max
+        print(f"Progress: {current}/{max} - {progress:.2%}")
+    elevation_matrix, min_elev, max_elev = make_elevation_matrix(
+        minLat, minLon, maxLat, maxLon, vertical_size, horizontal_size, progress_callback=print_progress)
+    elev_fig, elev_ax = plt.subplots(figsize=(horizontal_size, vertical_size))
+    elev_contour = elev_ax.contourf(
+        elevation_matrix, origin='upper', cmap='terrain')
+    elev_ax.set_xticks([])
+    elev_ax.set_yticks([])
+    # elev_image_buffer = BytesIO()
+    # plt.savefig(elev_image_buffer, format="png", dpi=300, bbox_inches="tight")
+    # plt.savefig("Plots/elevation_contour_clear.png", dpi=300, bbox_inches="tight")
+    elev_cax = make_axes_locatable(elev_ax).append_axes(
+        "right", size="5%", pad=0.1)
+    elev_cbar = plt.colorbar(elev_contour, cax=elev_cax)
+    elev_cbar.set_label("Elevation (meters)")
+    elev_ax.set_title("Elevation contour")
+    # plt.savefig("Plots/elevation_contour.png", dpi=300, bbox_inches="tight")
+    elev_contour_io = BytesIO()
+    plt.savefig(elev_contour_io, format="png", dpi=300, bbox_inches="tight")
+    plt.close(elev_fig)
+    return StreamingResponse(elev_contour_io, media_type="image/png")
