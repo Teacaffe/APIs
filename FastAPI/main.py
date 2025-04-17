@@ -99,7 +99,7 @@ def generate_static_map(minLat, minLon, maxLat, maxLon,
                f"&scaleFactor=2"
                f"{rectangle}"
                f"&apiKey=c8e849852f404fac9bc96a97e10447a2")
-    print(f"Map url: {url}")
+    # print(f"Map url: {url}")
     response = requests.get(url)
     output = Image.open(BytesIO(response.content))
     output = output if not greyscale else output.convert('L')
