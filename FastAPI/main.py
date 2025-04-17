@@ -257,4 +257,5 @@ def new_elev_contour_map(bounds: str, vertical_size: int, horizontal_size: int):
     elev_contour_io = BytesIO()
     plt.savefig(elev_contour_io, format="png", dpi=300, bbox_inches="tight")
     plt.close(elev_fig)
+    elev_contour_io.seek(0)
     return StreamingResponse(elev_contour_io, media_type="image/png")
