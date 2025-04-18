@@ -155,7 +155,7 @@ def generate_static_map(minLat, minLon, maxLat, maxLon,
                f"&size={width}x{height}"
                f"&scale=2"
                f"{rectangle}"
-               f"&key={os.getenv("GOOGLE_MAPS_PLATFORM_API_KEY")}")
+               f"&key={os.getenv('GOOGLE_MAPS_PLATFORM_API_KEY')}")
     elif provider.lower() == "geoapify":
         rectangle = f"&geometry=rect:{minLon},{minLat},{maxLon},{maxLat};linewidth:{rectangle_weight};linecolor:%23{rectangle_rgba[0:6]};lineopacity:{int(rectangle_rgba[6:8], 16) / 255}" if draw_rectangle else ""
         url = (f"https://maps.geoapify.com/v1/staticmap?"
@@ -165,7 +165,7 @@ def generate_static_map(minLat, minLon, maxLat, maxLon,
                f"&width={width * 2}&height={height * 2}"
                f"&scaleFactor=2"
                f"{rectangle}"
-               f"&apiKey={os.getenv("GEOAPIFY_API_KEY")}")
+               f"&apiKey={os.getenv('GEOAPIFY_API_KEY')}")
     # print(f"Map url: {url}")
     response = requests.get(url)
     output = Image.open(BytesIO(response.content))
