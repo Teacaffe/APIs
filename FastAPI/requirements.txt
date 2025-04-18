@@ -1,0 +1,8 @@
+Pillow
+numpy
+geopy
+matplotlib
+requests
+fastapi
+pydantic
+uvicorn
