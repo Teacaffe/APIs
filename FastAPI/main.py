@@ -224,8 +224,35 @@ def new_map(params: StaticMapParams = Depends()):
     return StreamingResponse(mapIO, media_type="image/png")
 
 
-@app.get("/elevation_contour")
-def new_elev_contour_map(bounds: str, horizontal_resolution: int = None, vertical_resolution: int = None):
+@app.get("/elevation_contour/data")
+def new_elev_contour_map_data(bounds: str, horizontal_resolution: int = None, vertical_resolution: int = None):
+    coordinates = [float(x) for x in bounds.split(",")]
+    if len(coordinates) != 4:
+        raise HTTPException(
+            status_code=400, detail="Bounds parameter requires four [float] values: minLat, minLon, maxLat, maxLon")
+    minLat = coordinates[0]
+    minLon = coordinates[1]
+    maxLat = coordinates[2]
+    maxLon = coordinates[3]
+    # contourIO = generate_elevation_contour(minLat, minLon, maxLat, maxLon, vertical_size, horizontal_size)
+
+    def print_progress(current, max):
+        progress = current / max
+        print(f"Progress: {current}/{max} - {progress:.2%}")
+    width = geodesic((minLat, minLon), (minLat, maxLon)).meters
+    height = geodesic((minLat, minLon), (maxLat, minLon)).meters
+    aspect_ratio = height / width
+    print(f"Size: {width}x{height} --> Aspect ratio: {aspect_ratio}")
+    horizontal_resolution = horizontal_resolution if horizontal_resolution != None else 100
+    vertical_resolution = vertical_resolution if vertical_resolution != None else math.ceil(
+        horizontal_resolution * aspect_ratio)
+    elevation_matrix, min_elev, max_elev = make_elevation_matrix(
+        minLat, minLon, maxLat, maxLon, vertical_resolution, horizontal_resolution, progress_callback=print_progress)
+    return {"elevation_data": elevation_matrix.tolist(), "min_elev": min_elev, "max_elev": max_elev}
+
+
+@app.get("/elevation_contour/image")
+def new_elev_contour_map_image(bounds: str, horizontal_resolution: int = None, vertical_resolution: int = None):
     coordinates = [float(x) for x in bounds.split(",")]
     if len(coordinates) != 4:
         raise HTTPException(
