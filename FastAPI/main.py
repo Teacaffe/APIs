@@ -4,11 +4,12 @@ from pydantic import BaseModel
 from PIL import Image, ImageEnhance
 from io import BytesIO
 from matplotlib import pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from geopy.distance import geodesic
 import numpy as np
 import math
 import requests
+import os
 
 app = FastAPI()
 
@@ -31,7 +32,7 @@ def round_half_up(n: float, decimals: int = 0) -> float:
 def make_elevation_matrix(min_lat, min_lon, max_lat, max_lon, lat_size, lon_size, progress_callback=None):
     # Progress callback format: def progress_callback(current, max)
     url = "https://maps.googleapis.com/maps/api/elevation/json"
-    api_key = "AIzaSyAN4RaYNeTo-BXcPBKG_gsjNgSW4FHmYGs"
+    api_key = os.getenv("GOOGLE_MAPS_PLATFORM_API_KEY")
     elevation_matrix = np.zeros((lat_size, lon_size), dtype=float)
     lat_step = (max_lat - min_lat) / (lat_size - 1)
     lon_step = (max_lon - min_lon) / (lon_size - 1)
@@ -154,7 +155,7 @@ def generate_static_map(minLat, minLon, maxLat, maxLon,
                f"&size={width}x{height}"
                f"&scale=2"
                f"{rectangle}"
-               f"&key=AIzaSyAN4RaYNeTo-BXcPBKG_gsjNgSW4FHmYGs")
+               f"&key={os.getenv("GOOGLE_MAPS_PLATFORM_API_KEY")}")
     elif provider.lower() == "geoapify":
         rectangle = f"&geometry=rect:{minLon},{minLat},{maxLon},{maxLat};linewidth:{rectangle_weight};linecolor:%23{rectangle_rgba[0:6]};lineopacity:{int(rectangle_rgba[6:8], 16) / 255}" if draw_rectangle else ""
         url = (f"https://maps.geoapify.com/v1/staticmap?"
@@ -164,7 +165,7 @@ def generate_static_map(minLat, minLon, maxLat, maxLon,
                f"&width={width * 2}&height={height * 2}"
                f"&scaleFactor=2"
                f"{rectangle}"
-               f"&apiKey=c8e849852f404fac9bc96a97e10447a2")
+               f"&apiKey={os.getenv("GEOAPIFY_API_KEY")}")
     # print(f"Map url: {url}")
     response = requests.get(url)
     output = Image.open(BytesIO(response.content))
@@ -224,7 +225,7 @@ def new_map(params: StaticMapParams = Depends()):
 
 
 @app.get("/elevation_contour")
-def new_elev_contour_map(bounds: str, vertical_size: int, horizontal_size: int):
+def new_elev_contour_map(bounds: str, horizontal_resolution: int = None, vertical_resolution: int = None):
     coordinates = [float(x) for x in bounds.split(",")]
     if len(coordinates) != 4:
         raise HTTPException(
@@ -238,9 +239,20 @@ def new_elev_contour_map(bounds: str, vertical_size: int, horizontal_size: int):
     def print_progress(current, max):
         progress = current / max
         print(f"Progress: {current}/{max} - {progress:.2%}")
+    width = geodesic((minLat, minLon), (minLat, maxLon)).meters
+    height = geodesic((minLat, minLon), (maxLat, minLon)).meters
+    aspect_ratio = height / width
+    print(f"Size: {width}x{height} --> Aspect ratio: {aspect_ratio}")
+    horizontal_resolution = horizontal_resolution if horizontal_resolution != None else 100
+    vertical_resolution = vertical_resolution if vertical_resolution != None else math.ceil(
+        horizontal_resolution * aspect_ratio)
     elevation_matrix, min_elev, max_elev = make_elevation_matrix(
-        minLat, minLon, maxLat, maxLon, vertical_size, horizontal_size, progress_callback=print_progress)
-    elev_fig, elev_ax = plt.subplots(figsize=(horizontal_size, vertical_size))
+        minLat, minLon, maxLat, maxLon, vertical_resolution, horizontal_resolution, progress_callback=print_progress)
+    figWidth = 10
+    figHeight = figWidth * aspect_ratio
+    print(
+        f"figSize: {figWidth}x{figHeight} --> Aspect ratio: {figHeight / figWidth}")
+    elev_fig, elev_ax = plt.subplots(figsize=(figWidth, figHeight))
     elev_contour = elev_ax.contourf(
         elevation_matrix, origin='upper', cmap='terrain')
     elev_ax.set_xticks([])
