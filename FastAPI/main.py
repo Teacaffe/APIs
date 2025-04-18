@@ -182,8 +182,7 @@ def generate_elevation_contour(minLat, minLon, maxLat, maxLon, vertical_size, ho
     def print_progress(current, max):
         progress = current / max
         print(f"Progress: {current}/{max} - {progress:.2%}")
-    elevation_matrix, min_elev, max_elev = make_elevation_matrix(
-        minLat, minLon, maxLat, maxLon, vertical_size, horizontal_size, progress_callback=print_progress)
+    elevation_matrix, min_elev, max_elev = make_elevation_matrix(minLat, minLon, maxLat, maxLon, vertical_size, horizontal_size) # , progress_callback=print_progress)
     elev_fig, elev_ax = plt.subplots(figsize=(horizontal_size, vertical_size))
     elev_contour = elev_ax.contourf(
         elevation_matrix, origin='upper', cmap='terrain')
@@ -242,12 +241,11 @@ def new_elev_contour_map_data(bounds: str, horizontal_resolution: int = None, ve
     width = geodesic((minLat, minLon), (minLat, maxLon)).meters
     height = geodesic((minLat, minLon), (maxLat, minLon)).meters
     aspect_ratio = height / width
-    print(f"Size: {width}x{height} --> Aspect ratio: {aspect_ratio}")
+    # print(f"Size: {width}x{height} --> Aspect ratio: {aspect_ratio}")
     horizontal_resolution = horizontal_resolution if horizontal_resolution != None else 100
     vertical_resolution = vertical_resolution if vertical_resolution != None else math.ceil(
         horizontal_resolution * aspect_ratio)
-    elevation_matrix, min_elev, max_elev = make_elevation_matrix(
-        minLat, minLon, maxLat, maxLon, vertical_resolution, horizontal_resolution, progress_callback=print_progress)
+    elevation_matrix, min_elev, max_elev = make_elevation_matrix(minLat, minLon, maxLat, maxLon, vertical_resolution, horizontal_resolution) # , progress_callback=print_progress)
     return {"elevation_data": elevation_matrix.tolist(), "min_elev": min_elev, "max_elev": max_elev}
 
 
@@ -269,16 +267,14 @@ def new_elev_contour_map_image(bounds: str, horizontal_resolution: int = None, v
     width = geodesic((minLat, minLon), (minLat, maxLon)).meters
     height = geodesic((minLat, minLon), (maxLat, minLon)).meters
     aspect_ratio = height / width
-    print(f"Size: {width}x{height} --> Aspect ratio: {aspect_ratio}")
+    # print(f"Size: {width}x{height} --> Aspect ratio: {aspect_ratio}")
     horizontal_resolution = horizontal_resolution if horizontal_resolution != None else 100
     vertical_resolution = vertical_resolution if vertical_resolution != None else math.ceil(
         horizontal_resolution * aspect_ratio)
-    elevation_matrix, min_elev, max_elev = make_elevation_matrix(
-        minLat, minLon, maxLat, maxLon, vertical_resolution, horizontal_resolution, progress_callback=print_progress)
+    elevation_matrix, min_elev, max_elev = make_elevation_matrix(minLat, minLon, maxLat, maxLon, vertical_resolution, horizontal_resolution) # , progress_callback=print_progress)
     figWidth = 10
     figHeight = figWidth * aspect_ratio
-    print(
-        f"figSize: {figWidth}x{figHeight} --> Aspect ratio: {figHeight / figWidth}")
+    # print(f"figSize: {figWidth}x{figHeight} --> Aspect ratio: {figHeight / figWidth}")
     elev_fig, elev_ax = plt.subplots(figsize=(figWidth, figHeight))
     elev_contour = elev_ax.contourf(
         elevation_matrix, origin='upper', cmap='terrain')
